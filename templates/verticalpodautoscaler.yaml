@@ -1,0 +1,40 @@
+{{- if and (.Capabilities.APIVersions.Has "autoscaling.k8s.io/v1") (.Values.operator.verticalPodAutoscaler.enabled) }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ template "prometheus-operator.fullname" . }}
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  labels:
+    {{- include "prometheus-operator.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.operator.verticalPodAutoscaler.recommenders }}
+  recommenders:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  resourcePolicy:
+    containerPolicies:
+    - containerName: {{ template "prometheus-operator.name" . }}
+      {{- with .Values.operator.verticalPodAutoscaler.controlledResources }}
+      controlledResources:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.operator.verticalPodAutoscaler.controlledValues }}
+      controlledValues: {{ .Values.operator.verticalPodAutoscaler.controlledValues }}
+      {{- end }}
+      {{- if .Values.operator.verticalPodAutoscaler.maxAllowed }}
+      maxAllowed:
+        {{- toYaml .Values.operator.verticalPodAutoscaler.maxAllowed | nindent 8 }}
+      {{- end }}
+      {{- if .Values.operator.verticalPodAutoscaler.minAllowed }}
+      minAllowed:
+        {{- toYaml .Values.operator.verticalPodAutoscaler.minAllowed | nindent 8 }}
+      {{- end }}
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ template "prometheus-operator.fullname" . }}
+  {{- with .Values.operator.verticalPodAutoscaler.updatePolicy }}
+  updatePolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

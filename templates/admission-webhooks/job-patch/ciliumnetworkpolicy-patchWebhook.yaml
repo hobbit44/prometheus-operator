@@ -1,0 +1,36 @@
+{{- if and .Values.operator.networkPolicy.enabled (eq .Values.operator.networkPolicy.flavor "cilium") }}
+{{- if and .Values.operator.enabled .Values.operator.admissionWebhooks.enabled .Values.operator.admissionWebhooks.patch.enabled (not .Values.operator.admissionWebhooks.certManager.enabled) }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name:  {{ template "prometheus-operator.fullname" . }}-admission-patch
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    ## Ensure this is run before the job
+    helm.sh/hook-weight: "-5"
+    {{- with .Values.operator.admissionWebhooks.patch.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    app: {{ template "prometheus-operator.name" $ }}-admission-patch
+    {{- include "prometheus-operator.admission-webhooks.labels" $ | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app: {{ template "prometheus-operator.name" $ }}-admission-patch
+      {{- if .Values.operator.networkPolicy.matchLabels }}
+      {{ toYaml .Values.operator.networkPolicy.matchLabels | nindent 6 }}
+      {{- else }}
+      {{- include "prometheus-operator.admission-webhooks.labels" $ | nindent 6 }}
+      {{- end }}
+  egress:
+    {{- if and .Values.operator.networkPolicy.cilium .Values.operator.networkPolicy.cilium.egress }}
+      {{ toYaml .Values.operator.networkPolicy.cilium.egress | nindent 6 }}
+    {{- else }}
+    - toEntities:
+      - kube-apiserver
+    {{- end }}
+{{- end }}
+{{- end }}

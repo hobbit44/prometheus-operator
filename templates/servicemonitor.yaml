@@ -1,0 +1,47 @@
+{{- if and .Values.operator.enabled .Values.operator.serviceMonitor.selfMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ template "prometheus-operator.fullname" . }}
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  labels:
+    {{- include "prometheus-operator.labels" . | nindent 4 }}
+{{- with .Values.operator.serviceMonitor.additionalLabels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  {{- include "servicemonitor.scrapeLimits" .Values.operator.serviceMonitor | nindent 2 }}
+  endpoints:
+  {{- if .Values.operator.tls.enabled }}
+  - port: https
+    scheme: https
+    tlsConfig:
+      serverName: {{ template "prometheus-operator.fullname" . }}
+      ca:
+        secret:
+          name: {{ template "prometheus-operator.fullname" . }}-admission
+          key: {{ if .Values.operator.admissionWebhooks.certManager.enabled }}ca.crt{{ else }}ca{{ end }}
+          optional: false
+  {{- else }}
+  - port: http
+  {{- end }}
+    honorLabels: true
+    {{- if .Values.operator.serviceMonitor.interval }}
+    interval: {{ .Values.operator.serviceMonitor.interval }}
+    {{- end }}
+{{- if .Values.operator.serviceMonitor.metricRelabelings }}
+    metricRelabelings:
+{{ tpl (toYaml .Values.operator.serviceMonitor.metricRelabelings | indent 6) . }}
+{{- end }}
+{{- if .Values.operator.serviceMonitor.relabelings }}
+    relabelings:
+{{ toYaml .Values.operator.serviceMonitor.relabelings | indent 6 }}
+{{- end }}
+  selector:
+    matchLabels:
+      app: {{ template "prometheus-operator.name" . }}-operator
+      release: {{ $.Release.Name | quote }}
+  namespaceSelector:
+    matchNames:
+      - {{ printf "%s" (include "prometheus-operator.namespace" .) | quote }}
+{{- end }}

@@ -1,0 +1,143 @@
+{{- if and .Values.operator.enabled .Values.operator.admissionWebhooks.deployment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "prometheus-operator.fullname" . }}-webhook
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  labels:
+    app: {{ template "prometheus-operator.name" . }}-operator-webhook
+    {{- include "prometheus-operator.admission-webhooks.labels" . | nindent 4 }}
+{{- if .Values.operator.admissionWebhooks.deployment.labels }}
+{{ toYaml .Values.operator.admissionWebhooks.deployment.labels | indent 4 }}
+{{- end }}
+{{- if .Values.operator.admissionWebhooks.deployment.annotations }}
+  annotations:
+{{ toYaml .Values.operator.admissionWebhooks.deployment.annotations | indent 4 }}
+{{- end }}
+spec:
+  replicas: {{ .Values.operator.admissionWebhooks.deployment.replicas }}
+  revisionHistoryLimit: {{ .Values.operator.admissionWebhooks.deployment.revisionHistoryLimit }}
+  {{- with .Values.operator.admissionWebhooks.deployment.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ template "prometheus-operator.name" . }}-operator-webhook
+      release: {{ $.Release.Name | quote }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "prometheus-operator.name" . }}-operator-webhook
+        {{- include "prometheus-operator.admission-webhooks.labels" . | nindent 8 }}
+{{- if .Values.operator.admissionWebhooks.deployment.podLabels }}
+{{ toYaml .Values.operator.admissionWebhooks.deployment.podLabels | indent 8 }}
+{{- end }}
+{{- if .Values.operator.admissionWebhooks.deployment.podAnnotations }}
+      annotations:
+{{ toYaml .Values.operator.admissionWebhooks.deployment.podAnnotations | indent 8 }}
+{{- end }}
+    spec:
+    {{- if .Values.operator.admissionWebhooks.deployment.priorityClassName }}
+      priorityClassName: {{ .Values.operator.admissionWebhooks.deployment.priorityClassName }}
+    {{- end }}
+    {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+      {{- include "prometheus-operator.imagePullSecrets" . | indent 8 }}
+    {{- end }}
+      containers:
+        - name: prometheus-operator-admission-webhook
+          {{- $operatorRegistry := .Values.global.imageRegistry | default .Values.operator.admissionWebhooks.deployment.image.registry -}}
+          {{- if .Values.operator.admissionWebhooks.deployment.image.sha }}
+          image: "{{ $operatorRegistry }}/{{ .Values.operator.admissionWebhooks.deployment.image.repository }}:{{ .Values.operator.admissionWebhooks.deployment.image.tag | default .Chart.AppVersion }}@sha256:{{ .Values.operator.admissionWebhooks.deployment.image.sha }}"
+          {{- else }}
+          image: "{{ $operatorRegistry }}/{{ .Values.operator.admissionWebhooks.deployment.image.repository }}:{{ .Values.operator.admissionWebhooks.deployment.image.tag | default .Chart.AppVersion }}"
+          {{- end }}
+          imagePullPolicy: "{{ .Values.operator.admissionWebhooks.deployment.image.pullPolicy }}"
+          args:
+            {{- if .Values.operator.admissionWebhooks.deployment.logFormat }}
+            - --log-format={{ .Values.operator.admissionWebhooks.deployment.logFormat }}
+            {{- end }}
+            {{- if .Values.operator.admissionWebhooks.deployment.logLevel }}
+            - --log-level={{ .Values.operator.admissionWebhooks.deployment.logLevel }}
+            {{- end }}
+          {{- if .Values.operator.admissionWebhooks.deployment.tls.enabled }}
+            - "--web.enable-tls=true"
+            - "--web.cert-file=/cert/{{ if .Values.operator.admissionWebhooks.certManager.enabled }}tls.crt{{ else }}cert{{ end }}"
+            - "--web.key-file=/cert/{{ if .Values.operator.admissionWebhooks.certManager.enabled }}tls.key{{ else }}key{{ end }}"
+            - "--web.listen-address=:{{ .Values.operator.admissionWebhooks.deployment.tls.internalPort }}"
+            - "--web.tls-min-version={{ .Values.operator.admissionWebhooks.deployment.tls.tlsMinVersion }}"
+          ports:
+            - containerPort: {{ .Values.operator.admissionWebhooks.deployment.tls.internalPort }}
+              name: https
+          {{- else }}
+          ports:
+            - containerPort: 8080
+              name: http
+          {{- end }}
+          {{- if .Values.operator.admissionWebhooks.deployment.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.operator.admissionWebhooks.deployment.tls.enabled | ternary "https" "http" }}
+              scheme: {{ .Values.operator.admissionWebhooks.deployment.tls.enabled | ternary "HTTPS" "HTTP" }}
+            initialDelaySeconds: {{ .Values.operator.admissionWebhooks.deployment.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.operator.admissionWebhooks.deployment.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.operator.admissionWebhooks.deployment.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.operator.admissionWebhooks.deployment.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.operator.admissionWebhooks.deployment.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.operator.admissionWebhooks.deployment.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.operator.admissionWebhooks.deployment.tls.enabled | ternary "https" "http" }}
+              scheme: {{ .Values.operator.admissionWebhooks.deployment.tls.enabled | ternary "HTTPS" "HTTP" }}
+            initialDelaySeconds: {{ .Values.operator.admissionWebhooks.deployment.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.operator.admissionWebhooks.deployment.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.operator.admissionWebhooks.deployment.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.operator.admissionWebhooks.deployment.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.operator.admissionWebhooks.deployment.livenessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+{{ toYaml .Values.operator.admissionWebhooks.deployment.resources | indent 12 }}
+          securityContext:
+{{ toYaml .Values.operator.admissionWebhooks.deployment.containerSecurityContext | indent 12 }}
+{{- if .Values.operator.admissionWebhooks.deployment.tls.enabled }}
+          volumeMounts:
+            - name: tls-secret
+              mountPath: /cert
+              readOnly: true
+      volumes:
+        - name: tls-secret
+          secret:
+            defaultMode: 420
+            secretName: {{ template "prometheus-operator.fullname" . }}-admission
+{{- end }}
+    {{- with .Values.operator.admissionWebhooks.deployment.dnsConfig }}
+      dnsConfig:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+{{- if .Values.operator.admissionWebhooks.deployment.securityContext }}
+      securityContext:
+{{ toYaml .Values.operator.admissionWebhooks.deployment.securityContext | indent 8 }}
+{{- end }}
+      serviceAccountName: {{ template "prometheus-operator.serviceAccountName" . }}-webhook
+      automountServiceAccountToken: {{ .Values.operator.admissionWebhooks.deployment.automountServiceAccountToken }}
+{{- if .Values.operator.admissionWebhooks.deployment.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+{{- end }}
+    {{- with .Values.operator.admissionWebhooks.deployment.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.operator.admissionWebhooks.deployment.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.operator.admissionWebhooks.deployment.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+{{- end }}

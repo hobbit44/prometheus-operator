@@ -1,0 +1,81 @@
+{{- if and .Values.operator.enabled .Values.operator.admissionWebhooks.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name:  {{ template "prometheus-operator.fullname" . }}-admission
+  annotations:
+    {{- include "prometheus-operator.admission-webhooks.annotations" $ | trim | nindent 4 }}
+    {{- with .Values.operator.admissionWebhooks.validatingWebhookConfiguration.annotations }}
+    {{- toYaml . | nindent 4}}
+    {{- end }}
+  labels:
+    app: {{ template "prometheus-operator.name" $ }}-admission
+    {{- include "prometheus-operator.admission-webhooks.labels" $ | nindent 4 }}
+webhooks:
+  - name: prometheusrulemutate.monitoring.coreos.com
+    {{- if eq .Values.operator.admissionWebhooks.failurePolicy "IgnoreOnInstallOnly" }}
+    failurePolicy: {{ .Release.IsInstall | ternary "Ignore" "Fail" }}
+    {{- else if .Values.operator.admissionWebhooks.failurePolicy  }}
+    failurePolicy: {{ .Values.operator.admissionWebhooks.failurePolicy }}
+    {{- else if .Values.operator.admissionWebhooks.patch.enabled }}
+    failurePolicy: Ignore
+    {{- else }}
+    failurePolicy: Fail
+    {{- end }}
+    rules:
+      - apiGroups:
+          - monitoring.coreos.com
+        apiVersions:
+          - "*"
+        resources:
+          - prometheusrules
+        operations:
+          - CREATE
+          - UPDATE
+    clientConfig:
+      service:
+        namespace: {{ template "prometheus-operator.namespace" . }}
+        name: {{ template "prometheus-operator.fullname" $ }}{{ if .Values.operator.admissionWebhooks.deployment.enabled }}-webhook{{ end }}
+        path: /admission-prometheusrules/validate
+      {{- if and .Values.operator.admissionWebhooks.caBundle (not .Values.operator.admissionWebhooks.patch.enabled) (not .Values.operator.admissionWebhooks.certManager.enabled) }}
+      caBundle: {{ .Values.operator.admissionWebhooks.caBundle }}
+      {{- end }}
+    timeoutSeconds: {{ .Values.operator.admissionWebhooks.timeoutSeconds }}
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    {{- if or .Values.operator.denyNamespaces .Values.operator.namespaces .Values.operator.admissionWebhooks.namespaceSelector }}
+    namespaceSelector:
+      {{- with (omit .Values.operator.admissionWebhooks.namespaceSelector "matchExpressions") }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- if or .Values.operator.denyNamespaces .Values.operator.namespaces .Values.operator.admissionWebhooks.namespaceSelector.matchExpressions }}
+      matchExpressions:
+        {{- with (.Values.operator.admissionWebhooks.namespaceSelector.matchExpressions) }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.operator.denyNamespaces }}
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+        {{- range $namespace := mustUniq .Values.operator.denyNamespaces }}
+            - {{ $namespace }}
+        {{- end }}
+        {{- else if and .Values.operator.namespaces .Values.operator.namespaces.additional }}
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+        {{- if and .Values.operator.namespaces.releaseNamespace (default .Values.operator.namespaces.releaseNamespace true) }}
+        {{- $namespace := printf "%s" (include "prometheus-operator.namespace" .) }}
+            - {{ $namespace }}
+        {{- end }}
+        {{- range $namespace := mustUniq .Values.operator.namespaces.additional }}
+            - {{ $namespace }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.operator.admissionWebhooks.objectSelector }}
+    objectSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}

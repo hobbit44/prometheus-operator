@@ -1,0 +1,40 @@
+{{- if and .Values.operator.networkPolicy.enabled (eq .Values.operator.networkPolicy.flavor "cilium") }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ template "prometheus-operator.fullname" . }}
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  labels:
+    {{- include "prometheus-operator.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- if .Values.operator.networkPolicy.matchLabels }}
+      app: {{ template "prometheus-operator.name" . }}-operator
+      {{ toYaml .Values.operator.networkPolicy.matchLabels | nindent 6 }}
+      {{- else }}
+      {{- include "prometheus-operator.labels" $ | nindent 6 }}
+      {{- end }}
+  egress:
+    {{- if and .Values.operator.networkPolicy.cilium .Values.operator.networkPolicy.cilium.egress }}
+    {{ toYaml .Values.operator.networkPolicy.cilium.egress | nindent 6 }}
+    {{- else }}
+  - toEntities:
+    - kube-apiserver
+  {{- end }}
+  ingress:
+  - toPorts:
+    - ports:
+      {{- if .Values.operator.tls.enabled }}
+      - port: {{ .Values.operator.tls.internalPort | quote }}
+      {{- else }}
+      - port: "8080"
+      {{- end }}
+        protocol: "TCP"
+      {{- if not .Values.operator.tls.enabled }}
+      rules:
+        http:
+        - method: "GET"
+          path: "/metrics"
+      {{- end }}
+{{- end }}

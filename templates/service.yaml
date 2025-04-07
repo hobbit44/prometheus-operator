@@ -1,0 +1,61 @@
+{{- if .Values.operator.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "prometheus-operator.fullname" . }}
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  labels:
+    {{- include "prometheus-operator.labels" . | nindent 4 }}
+{{- if .Values.operator.service.labels }}
+{{ toYaml .Values.operator.service.labels | indent 4 }}
+{{- end }}
+{{- if .Values.operator.service.annotations }}
+  annotations:
+{{ toYaml .Values.operator.service.annotations | indent 4 }}
+{{- end }}
+spec:
+{{- if .Values.operator.service.clusterIP }}
+  clusterIP: {{ .Values.operator.service.clusterIP }}
+{{- end }}
+{{- if .Values.operator.service.ipDualStack.enabled }}
+  ipFamilies: {{ toYaml .Values.operator.service.ipDualStack.ipFamilies | nindent 4 }}
+  ipFamilyPolicy: {{ .Values.operator.service.ipDualStack.ipFamilyPolicy }}
+{{- end }}
+{{- if .Values.operator.service.externalIPs }}
+  externalIPs:
+{{ toYaml .Values.operator.service.externalIPs | indent 4 }}
+{{- end }}
+{{- if .Values.operator.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.operator.service.loadBalancerIP }}
+{{- end }}
+{{- if .Values.operator.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+  {{- range $cidr := .Values.operator.service.loadBalancerSourceRanges }}
+    - {{ $cidr }}
+  {{- end }}
+{{- end }}
+{{- if ne .Values.operator.service.type "ClusterIP" }}
+  externalTrafficPolicy: {{ .Values.operator.service.externalTrafficPolicy }}
+{{- end }}
+  ports:
+  {{- if not .Values.operator.tls.enabled }}
+  - name: http
+    {{- if eq .Values.operator.service.type "NodePort" }}
+    nodePort: {{ .Values.operator.service.nodePort }}
+    {{- end }}
+    port: 8080
+    targetPort: http
+  {{- end }}
+  {{- if .Values.operator.tls.enabled }}
+  - name: https
+    {{- if eq .Values.operator.service.type "NodePort"}}
+    nodePort: {{ .Values.operator.service.nodePortTls }}
+    {{- end }}
+    port: 443
+    targetPort: https
+  {{- end }}
+  selector:
+    app: {{ template "prometheus-operator.name" . }}-operator
+    release: {{ $.Release.Name | quote }}
+  type: "{{ .Values.operator.service.type }}"
+{{- end }}

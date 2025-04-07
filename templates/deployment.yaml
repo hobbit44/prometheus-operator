@@ -1,0 +1,243 @@
+{{- $namespace := printf "%s" (include "prometheus-operator.namespace" .) }}
+{{- $defaultKubeletSvcName := printf "%s-kubelet" (include "prometheus-operator.fullname" .) }}
+{{- if .Values.operator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "prometheus-operator.fullname" . }}
+  namespace: {{ template "prometheus-operator.namespace" . }}
+  labels:
+    {{- include "prometheus-operator.labels" . | nindent 4 }}
+{{- if .Values.operator.labels }}
+{{ toYaml .Values.operator.labels | indent 4 }}
+{{- end }}
+{{- if .Values.operator.annotations }}
+  annotations:
+{{ toYaml .Values.operator.annotations | indent 4 }}
+{{- end }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: {{ .Values.operator.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      app: {{ template "prometheus-operator.name" . }}-operator
+      release: {{ $.Release.Name | quote }}
+  {{- with .Values.operator.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "prometheus-operator.labels" . | nindent 8 }}
+{{- if .Values.operator.podLabels }}
+{{ toYaml .Values.operator.podLabels | indent 8 }}
+{{- end }}
+{{- if .Values.operator.podAnnotations }}
+      annotations:
+{{ toYaml .Values.operator.podAnnotations | indent 8 }}
+{{- end }}
+    spec:
+    {{- if .Values.operator.priorityClassName }}
+      priorityClassName: {{ .Values.operator.priorityClassName }}
+    {{- end }}
+    {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+      {{- include "prometheus-operator.imagePullSecrets" . | indent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ template "prometheus-operator.name" . }}
+          {{- $configReloaderRegistry := .Values.global.imageRegistry | default .Values.operator.prometheusConfigReloader.image.registry -}}
+          {{- $operatorRegistry := .Values.global.imageRegistry | default .Values.operator.image.registry -}}
+          {{- $thanosRegistry := .Values.global.imageRegistry | default .Values.operator.thanosImage.registry -}}
+          {{- if .Values.operator.image.sha }}
+          image: "{{ $operatorRegistry }}/{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}@sha256:{{ .Values.operator.image.sha }}"
+          {{- else }}
+          image: "{{ $operatorRegistry }}/{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}"
+          {{- end }}
+          imagePullPolicy: "{{ .Values.operator.image.pullPolicy }}"
+          args:
+            {{- if .Values.operator.kubeletService.enabled }}
+            - --kubelet-service={{ .Values.operator.kubeletService.namespace }}/{{ default $defaultKubeletSvcName .Values.operator.kubeletService.name  }}
+            {{- if .Values.operator.kubeletService.selector }}
+            - --kubelet-selector={{ .Values.operator.kubeletService.selector }}
+            {{- end }}
+            {{- end }}
+            - --kubelet-endpoints={{ .Values.operator.kubeletEndpointsEnabled }}
+            - --kubelet-endpointslice={{ .Values.operator.kubeletEndpointSliceEnabled }}
+            {{- if .Values.operator.logFormat }}
+            - --log-format={{ .Values.operator.logFormat }}
+            {{- end }}
+            {{- if .Values.operator.logLevel }}
+            - --log-level={{ .Values.operator.logLevel }}
+            {{- end }}
+            {{- if .Values.operator.denyNamespaces }}
+            - --deny-namespaces={{ tpl (.Values.operator.denyNamespaces | join ",") $ }}
+            {{- end }}
+            {{- with $.Values.operator.namespaces }}
+            {{- $namespaces := list }}
+            {{- if .releaseNamespace }}
+            {{- $namespaces = append $namespaces $namespace }}
+            {{- end }}
+            {{- if .additional }}
+            {{- range $ns := .additional }}
+            {{- $namespaces = append $namespaces (tpl $ns $) }}
+            {{- end }}
+            {{- end }}
+            - --namespaces={{ $namespaces | mustUniq | join "," }}
+            {{- end }}
+            - --localhost=127.0.0.1
+            {{- if .Values.operator.prometheusDefaultBaseImage }}
+            - --prometheus-default-base-image={{ .Values.global.imageRegistry | default .Values.operator.prometheusDefaultBaseImageRegistry }}/{{ .Values.operator.prometheusDefaultBaseImage }}
+            {{- end }}
+            {{- if .Values.operator.alertmanagerDefaultBaseImage }}
+            - --alertmanager-default-base-image={{ .Values.global.imageRegistry | default .Values.operator.alertmanagerDefaultBaseImageRegistry }}/{{ .Values.operator.alertmanagerDefaultBaseImage }}
+            {{- end }}
+            {{- if .Values.operator.prometheusConfigReloader.image.sha }}
+            - --prometheus-config-reloader={{ $configReloaderRegistry }}/{{ .Values.operator.prometheusConfigReloader.image.repository }}:{{ .Values.operator.prometheusConfigReloader.image.tag | default .Chart.AppVersion }}@sha256:{{ .Values.operator.prometheusConfigReloader.image.sha }}
+            {{- else }}
+            - --prometheus-config-reloader={{ $configReloaderRegistry }}/{{ .Values.operator.prometheusConfigReloader.image.repository }}:{{ .Values.operator.prometheusConfigReloader.image.tag | default .Chart.AppVersion }}
+            {{- end }}
+            - --config-reloader-cpu-request={{ (((.Values.operator.prometheusConfigReloader.resources).requests).cpu) | default 0 }}
+            - --config-reloader-cpu-limit={{ (((.Values.operator.prometheusConfigReloader.resources).limits).cpu) | default 0 }}
+            - --config-reloader-memory-request={{ (((.Values.operator.prometheusConfigReloader.resources).requests).memory) | default 0 }}
+            - --config-reloader-memory-limit={{ (((.Values.operator.prometheusConfigReloader.resources).limits).memory) | default 0 }}
+            {{- if .Values.operator.prometheusConfigReloader.enableProbe }}
+            - --enable-config-reloader-probes=true
+            {{- end }}
+            {{- if .Values.operator.alertmanagerInstanceNamespaces }}
+            - --alertmanager-instance-namespaces={{ .Values.operator.alertmanagerInstanceNamespaces | join "," }}
+            {{- end }}
+            {{- if .Values.operator.alertmanagerInstanceSelector }}
+            - --alertmanager-instance-selector={{ .Values.operator.alertmanagerInstanceSelector }}
+            {{- end }}
+            {{- if .Values.operator.alertmanagerConfigNamespaces }}
+            - --alertmanager-config-namespaces={{ .Values.operator.alertmanagerConfigNamespaces | join "," }}
+            {{- end }}
+            {{- if .Values.operator.prometheusInstanceNamespaces }}
+            - --prometheus-instance-namespaces={{ .Values.operator.prometheusInstanceNamespaces | join "," }}
+            {{- end }}
+            {{- if .Values.operator.prometheusInstanceSelector }}
+            - --prometheus-instance-selector={{ .Values.operator.prometheusInstanceSelector }}
+            {{- end }}
+            {{- if .Values.operator.thanosImage.sha }}
+            - --thanos-default-base-image={{ $thanosRegistry }}/{{ .Values.operator.thanosImage.repository }}:{{ .Values.operator.thanosImage.tag }}@sha256:{{ .Values.operator.thanosImage.sha }}
+            {{- else }}
+            - --thanos-default-base-image={{ $thanosRegistry }}/{{ .Values.operator.thanosImage.repository }}:{{ .Values.operator.thanosImage.tag }}
+            {{- end }}
+            {{- if .Values.operator.thanosRulerInstanceNamespaces }}
+            - --thanos-ruler-instance-namespaces={{ .Values.operator.thanosRulerInstanceNamespaces | join "," }}
+            {{- end }}
+            {{- if .Values.operator.thanosRulerInstanceSelector }}
+            - --thanos-ruler-instance-selector={{ .Values.operator.thanosRulerInstanceSelector }}
+            {{- end }}
+            {{- if .Values.operator.secretFieldSelector }}
+            - --secret-field-selector={{ tpl (.Values.operator.secretFieldSelector) $ }}
+            {{- end }}
+            {{- if .Values.operator.clusterDomain }}
+            - --cluster-domain={{ .Values.operator.clusterDomain }}
+            {{- end }}
+            {{- if .Values.operator.tls.enabled }}
+            - --web.enable-tls=true
+            - --web.cert-file=/cert/{{ if .Values.operator.admissionWebhooks.certManager.enabled }}tls.crt{{ else }}cert{{ end }}
+            - --web.key-file=/cert/{{ if .Values.operator.admissionWebhooks.certManager.enabled }}tls.key{{ else }}key{{ end }}
+            - --web.listen-address=:{{ .Values.operator.tls.internalPort }}
+            - --web.tls-min-version={{ .Values.operator.tls.tlsMinVersion }}
+            {{- end }}
+            {{- with .Values.operator.extraArgs }}
+            {{- tpl (toYaml .) $ | nindent 12 }}
+            {{- end }}
+          {{- with .Values.operator.lifecycle }}
+          lifecycle: {{ toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.operator.tls.enabled }}
+          ports:
+            - containerPort: {{ .Values.operator.tls.internalPort }}
+              name: https
+          {{- else }}
+          ports:
+            - containerPort: 8080
+              name: http
+          {{- end }}
+          env:
+          {{- range $key, $value := .Values.operator.env }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+          {{- end }}
+          resources:
+{{ toYaml .Values.operator.resources | indent 12 }}
+          securityContext:
+{{ toYaml .Values.operator.containerSecurityContext | indent 12 }}
+          volumeMounts:
+          {{- if .Values.operator.tls.enabled }}
+            - name: tls-secret
+              mountPath: /cert
+              readOnly: true
+          {{- end }}
+          {{- with .Values.operator.extraVolumeMounts }}
+          {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.operator.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.operator.tls.enabled | ternary "https" "http" }}
+              scheme: {{ .Values.operator.tls.enabled | ternary "HTTPS" "HTTP" }}
+            initialDelaySeconds: {{ .Values.operator.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.operator.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.operator.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.operator.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.operator.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.operator.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.operator.tls.enabled | ternary "https" "http" }}
+              scheme: {{ .Values.operator.tls.enabled | ternary "HTTPS" "HTTP" }}
+            initialDelaySeconds: {{ .Values.operator.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.operator.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.operator.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.operator.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.operator.livenessProbe.failureThreshold }}
+          {{- end }}
+      volumes:
+        {{- if .Values.operator.tls.enabled }}
+        - name: tls-secret
+          secret:
+            defaultMode: 420
+            secretName: {{ template "prometheus-operator.fullname" . }}-admission
+        {{- end }}
+        {{- with .Values.operator.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    {{- with .Values.operator.dnsConfig }}
+      dnsConfig:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+{{- if .Values.operator.securityContext }}
+      securityContext:
+{{ toYaml .Values.operator.securityContext | indent 8 }}
+{{- end }}
+      serviceAccountName: {{ template "prometheus-operator.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.operator.automountServiceAccountToken }}
+{{- if .Values.operator.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+{{- end }}
+    {{- with .Values.operator.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.operator.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.operator.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+    {{- end }}
+    {{- with .Values.operator.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+{{- end }}

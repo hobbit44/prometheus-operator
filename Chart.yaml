@@ -1,0 +1,9 @@
+apiVersion: v2
+name: prometheus-operator
+description: Prometheus Operator Helm chart
+type: application
+sources:
+  - https://github.com/hobbit44/prometheus-operator
+version: 0.1.0
+
+    
