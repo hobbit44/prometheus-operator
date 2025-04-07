@@ -183,9 +183,6 @@ global:
 operator:
   enabled: true
 
-  ## Use '{{ template "prometheus-operator.fullname" . }}-operator' by default
-  fullnameOverride: ""
-
   ## Number of old replicasets to retain ##
   ## The default value is 10, 0 will garbage-collect old replicasets ##
   revisionHistoryLimit: 10

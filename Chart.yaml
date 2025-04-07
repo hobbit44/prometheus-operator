@@ -5,5 +5,4 @@ type: application
 sources:
   - https://github.com/hobbit44/prometheus-operator
 version: 0.1.0
-
-    
+appVersion: v0.81.0

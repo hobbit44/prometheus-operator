@@ -20,7 +20,7 @@ spec:
   revisionHistoryLimit: {{ .Values.operator.revisionHistoryLimit }}
   selector:
     matchLabels:
-      app: {{ template "prometheus-operator.name" . }}-operator
+      app: {{ template "prometheus-operator.name" . }}
       release: {{ $.Release.Name | quote }}
   {{- with .Values.operator.strategy }}
   strategy:
@@ -30,6 +30,7 @@ spec:
     metadata:
       labels:
         {{- include "prometheus-operator.labels" . | nindent 8 }}
+        app: {{ template "prometheus-operator.name" . }}
 {{- if .Values.operator.podLabels }}
 {{ toYaml .Values.operator.podLabels | indent 8 }}
 {{- end }}
